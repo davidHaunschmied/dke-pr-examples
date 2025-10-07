@@ -48,6 +48,8 @@ For each step, you MUST strictly follow this format:
 Thought: [your reasoning for this step]
 Action: [tool_name(arguments)]
 
+Do NOT include the Observation in your response; I will provide it after you take an Action.
+
 MANDATORY:
 - Every response MUST begin with a Thought: line, followed by an Action: line. Never output an Action without a preceding Thought.
 - If you ever omit the Thought line, you will be penalized.
