@@ -1,14 +1,39 @@
+"""
+LLM Agent that solves tasks using a Thought → Action → Observation loop (ReAct).
+
+Demonstrates autonomous tool use: the agent reasons about each step, picks a
+tool, observes the result, and repeats until it reaches a final answer.  This is
+the most complex of the three levels:  context_engineering  →  rag  →  agent.
+
+Uses:
+- OpenRouter (via openai client) for LLM inference
+"""
+
 import os
-import json
 import re
-import logging
-os.environ["GRPC_VERBOSITY"] = "ERROR"
 
-import google.generativeai as genai
+from dotenv import load_dotenv
+from openai import OpenAI
 
-# Configure the API
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
+load_dotenv()
 
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+OPEN_ROUTER_API_KEY = os.environ.get("OPEN_ROUTER_API_KEY")
+
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=OPEN_ROUTER_API_KEY,
+)
+
+INFERENCE_MODEL = "nvidia/nemotron-3-nano-30b-a3b:free"
+
+
+# ---------------------------------------------------------------------------
+# Tool abstraction
+# ---------------------------------------------------------------------------
 
 class SimpleTool:
     def __init__(self, name, func, description):
@@ -20,16 +45,17 @@ class SimpleTool:
         return self.func(args)
 
 
+# ---------------------------------------------------------------------------
+# Agent
+# ---------------------------------------------------------------------------
+
 class SimpleAgent:
-    def __init__(self, model_name="gemini-2.5-flash-lite"):
-        self.model = None
-        self.model_name = model_name
+    def __init__(self):
         self.tools = {}
         self.memory = []
         self.max_iterations = 10
+        self.system_prompt = None
 
-    def initializeModel(self):
-        self.model = genai.GenerativeModel(self.model_name, system_instruction=self.get_system_prompt())
 
     def add_tool(self, tool):
         self.tools[tool.name] = tool
@@ -93,19 +119,24 @@ Never skip steps. Never omit the Thought: line. Always use this exact format and
         return "None"
 
     def run(self, task):
-        self.initializeModel()
+        self.system_prompt = self.get_system_prompt()
         self.memory = []
 
         for iteration in range(self.max_iterations):
             print(f"\n--- Iteration {iteration + 1} ---")
             print(f"Current memory: {self.memory}\n")
 
-            full_prompt = f"Task: {task}\n\nMemory:{self.memory}"
-
+            user_prompt = f"Task: {task}\n\nMemory:{self.memory}"
 
             # Get LLM response
-            response = self.model.generate_content(full_prompt)
-            response_text = response.text
+            response = client.chat.completions.create(
+                model=INFERENCE_MODEL,
+                messages=[
+                    {"role": "system", "content": self.system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            )
+            response_text = response.choices[0].message.content
             print(f"LLM Output:\n{response_text}")
 
             # Parse the thought
@@ -144,7 +175,10 @@ Never skip steps. Never omit the Thought: line. Always use this exact format and
         return "Max iterations reached without finding answer"
 
 
-# Example tools
+# ---------------------------------------------------------------------------
+# Built-in tools
+# ---------------------------------------------------------------------------
+
 def calculator(args):
     # Simple eval-based calculator (use with caution in production)
     try:
@@ -158,7 +192,10 @@ def web_search(args):
     return f"Mock search results for: {args}"
 
 
+# ---------------------------------------------------------------------------
 # Main execution
+# ---------------------------------------------------------------------------
+
 if __name__ == "__main__":
     # Create agent
     agent = SimpleAgent()

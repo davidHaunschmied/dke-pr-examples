@@ -3,14 +3,13 @@
 This repository contains three AI-based Python programs, ordered by complexity:
 - **context_engineering.py**: A German ↔ English translator that demonstrates how careful prompt design ("context engineering") steers LLM output — no tools, no external data.
 - **rag.py**: A Retrieval-Augmented Generation (RAG) system that answers questions about the JKU Linz "Wirtschaftsinformatik" Bachelor and Master programs using document-based retrieval and OpenRouter for embeddings and inference.
-- **llm-agent.py**: An autonomous agent that solves tasks using tools and Google Gemini.
+- **llm-agent.py**: An autonomous agent that solves tasks using tools and OpenRouter, following the ReAct framework.
 
 ## Requirements
 
 - Python 3.8 or newer
-- API key for Google Gemini (environment variable `GEMINI_API_KEY`) - required for llm-agent.py
-- API key for OpenRouter (environment variable `OPEN_ROUTER_API_KEY`) - required for context_engineering.py and rag.py
-- Internet connection (for OpenRouter API and Gemini API)
+- API key for OpenRouter (environment variable `OPEN_ROUTER_API_KEY`) — required for all scripts. Get your free key at [OpenRouter](https://openrouter.ai/).
+- Internet connection (for OpenRouter API)
 - Recommended: Virtual environment (`python -m venv .venv`)
 
 Install the required packages:
@@ -199,8 +198,7 @@ You can adjust these constants at the top of `rag.py`:
 ## Notes
 
 - The three scripts illustrate increasing levels of complexity: **context engineering** (prompt design only) → **RAG** (retrieval + generation) → **agent** (autonomous tool use).
-- The Gemini API key must be set as the environment variable `GEMINI_API_KEY` for llm-agent.py.
-- The OpenRouter API key must be set as the environment variable `OPEN_ROUTER_API_KEY` for context_engineering.py and rag.py. Get your free API key at [OpenRouter](https://openrouter.ai/).
+- All scripts use OpenRouter with free models. Set `OPEN_ROUTER_API_KEY` in your `.env` file or as an environment variable.
 - The web search tool in the agent is a mock and does not provide real search results.
 
 ---
