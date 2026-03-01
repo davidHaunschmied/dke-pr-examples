@@ -1,14 +1,15 @@
 # dke-pr-examples
 
-This repository contains two AI-based Python programs:
-- **llm-agent.py**: An autonomous agent that solves tasks using tools and Google Gemini.
+This repository contains three AI-based Python programs, ordered by complexity:
+- **context_engineering.py**: A German ↔ English translator that demonstrates how careful prompt design ("context engineering") steers LLM output — no tools, no external data.
 - **rag.py**: A Retrieval-Augmented Generation (RAG) system that answers questions about the JKU Linz "Wirtschaftsinformatik" Bachelor and Master programs using document-based retrieval and OpenRouter for embeddings and inference.
+- **llm-agent.py**: An autonomous agent that solves tasks using tools and Google Gemini.
 
 ## Requirements
 
 - Python 3.8 or newer
 - API key for Google Gemini (environment variable `GEMINI_API_KEY`) - required for llm-agent.py
-- API key for OpenRouter (environment variable `OPEN_ROUTER_API_KEY`) - required for openrouter.py and rag.py
+- API key for OpenRouter (environment variable `OPEN_ROUTER_API_KEY`) - required for context_engineering.py and rag.py
 - Internet connection (for OpenRouter API and Gemini API)
 - Recommended: Virtual environment (`python -m venv .venv`)
 
@@ -17,6 +18,54 @@ Install the required packages:
 pip install -r requirements.txt
 ```
 
+
+## context_engineering.py
+
+A German ↔ English translator that demonstrates **context engineering** — the practice of carefully designing the system prompt to control LLM behaviour without any tools, retrieval, or external data.
+
+### What is context engineering?
+
+Context engineering is about crafting the *input context* (system prompt, user prompt, examples) so the model produces the output you want. A well-designed system prompt can enforce style, format, tone, and domain constraints — all without writing any extra code. This script shows how a single, carefully worded system prompt turns a general-purpose LLM into a specialised translator.
+
+### How to start
+
+```cmd
+python context_engineering.py
+```
+
+The script prints its system prompt at startup so you can see exactly which instructions shape the model's output.
+
+### Example output
+
+```
+============================================================
+  German ↔ English Translator  (Context Engineering Demo)
+============================================================
+
+--- System prompt (this is the context engineering) ---
+You are an expert German ↔ English translator. Follow these rules strictly:
+1. AUTO-DETECT the input language. ...
+--- End of system prompt ---
+
+Enter German text to get English, or English text to get German.
+Type 'quit' or 'exit' to stop.
+
+Text: Da steppt der Bär!
+  → That's where the party is!
+
+Text: I'm looking forward to the weekend.
+  → Ich freue mich auf das Wochenende.
+```
+
+### Key prompt-engineering techniques used
+
+| Technique | Example from the system prompt |
+|---|---|
+| Role assignment | "You are an expert German ↔ English translator" |
+| Numbered rules | Explicit, ordered list of constraints |
+| Tone preservation | "Formal input → formal output" |
+| Idiom handling | "Find an equivalent idiom rather than translating literally" |
+| Output formatting | "Output ONLY the translated text. No explanations, no notes." |
 
 ## llm-agent.py
 
@@ -149,8 +198,9 @@ You can adjust these constants at the top of `rag.py`:
 
 ## Notes
 
+- The three scripts illustrate increasing levels of complexity: **context engineering** (prompt design only) → **RAG** (retrieval + generation) → **agent** (autonomous tool use).
 - The Gemini API key must be set as the environment variable `GEMINI_API_KEY` for llm-agent.py.
-- The OpenRouter API key must be set as the environment variable `OPEN_ROUTER_API_KEY` for rag.py. Get your free API key at [OpenRouter](https://openrouter.ai/).
+- The OpenRouter API key must be set as the environment variable `OPEN_ROUTER_API_KEY` for context_engineering.py and rag.py. Get your free API key at [OpenRouter](https://openrouter.ai/).
 - The web search tool in the agent is a mock and does not provide real search results.
 
 ---
