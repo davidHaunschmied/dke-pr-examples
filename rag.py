@@ -161,7 +161,7 @@ def build_or_load_embeddings(pdf_path: str, embeddings_path: str) -> list[dict]:
 
     # Embed (batch for speed)
     print("  Generating embeddings (this may take a moment) ...")
-    vectors = get_embeddings_batch([c for c in chunks])
+    vectors = get_embeddings_batch(chunks)
 
     chunk_records = [
         {"text": chunks[i], "embedding": vectors[i]}
@@ -268,23 +268,6 @@ Question: {question}"""
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    import sys
-
-    # Test mode: python rag.py --test "question" [master|bachelor]
-    if len(sys.argv) >= 3 and sys.argv[1] == "--test":
-        test_question = sys.argv[2]
-        prog = sys.argv[3] if len(sys.argv) >= 4 else "master"
-        doc = DOCUMENTS[prog]
-        try:
-            chunks_db = build_or_load_embeddings(doc["pdf"], doc["embeddings"])
-            answer = rag_query(test_question, chunks_db)
-            result = f"Question: {test_question}\n\n=== Answer ===\n{answer}\n"
-        except Exception as e:
-            result = f"Error: {type(e).__name__}: {e}"
-
-        with open("rag_test_output.txt", "w", encoding="utf-8") as f:
-            f.write(result)
-        sys.exit(0)
 
     print("=" * 60)
     print("  Wirtschaftsinformatik @ JKU - RAG Q&A System")
