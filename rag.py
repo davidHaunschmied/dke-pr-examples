@@ -1,11 +1,10 @@
 """
 RAG (Retrieval-Augmented Generation) system for answering questions about the
-JKU Linz "Wirtschaftsinformatik" master's program.
+JKU Linz "Wirtschaftsinformatik" programs (Bachelor and Master).
 
 Uses:
 - PyPDF2 for PDF text extraction
-- sentence-transformers (all-MiniLM-L6-v2) for local embeddings
-- OpenRouter (via openai client) for LLM inference
+- OpenRouter for both embeddings and LLM inference (via openai client)
 - numpy for cosine similarity
 - A simple JSON file as the vector store (no external DB needed)
 """
@@ -13,40 +12,48 @@ Uses:
 import os
 import json
 import hashlib
+import urllib.request
 
 import numpy as np
 import PyPDF2
+from dotenv import load_dotenv
 from openai import OpenAI
-from sentence_transformers import SentenceTransformer
+
+load_dotenv()
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
-OPEN_ROUTER_API_KEY = os.environ.get("OPEN_ROUTER_API_KEY", "YOUR_API_KEY_HERE")
+OPEN_ROUTER_API_KEY = os.environ.get("OPEN_ROUTER_API_KEY")
 
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=OPEN_ROUTER_API_KEY,
 )
 
-INFERENCE_MODEL = "google/gemini-2.0-flash-exp:free"
+INFERENCE_MODEL = "nvidia/nemotron-3-nano-30b-a3b:free"
+EMBEDDING_MODEL = "nvidia/llama-nemotron-embed-vl-1b-v2:free"
 
-PDF_PATH = os.path.join(os.path.dirname(__file__), "wirtschaftsinformatik_master.pdf")
-EMBEDDINGS_PATH = os.path.join(os.path.dirname(__file__), "embeddings.json")
+DB_DIR = os.path.join(os.path.dirname(__file__), "db")
+
+DOCUMENTS = {
+    "master": {
+        "label": "Masterstudium Wirtschaftsinformatik",
+        "pdf": os.path.join(DB_DIR, "win_master.pdf"),
+        "embeddings": os.path.join(DB_DIR, "win_master_embeddings.json"),
+    },
+    "bachelor": {
+        "label": "Bachelorstudium Wirtschaftsinformatik",
+        "pdf": os.path.join(DB_DIR, "win_bachelor.pdf"),
+        "embeddings": os.path.join(DB_DIR, "win_bachelor_embeddings.json"),
+    },
+}
 
 CHUNK_SIZE = 500       # characters per chunk
 CHUNK_OVERLAP = 100    # overlap between consecutive chunks
 TOP_K = 3              # number of similar chunks to retrieve
-SIMILARITY_THRESHOLD = 0.25  # minimum cosine similarity for retrieval
-
-# ---------------------------------------------------------------------------
-# Embedding model (local, no API key needed)
-# ---------------------------------------------------------------------------
-
-print("Loading embedding model (first run downloads ~80 MB) ...")
-embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
-print("Embedding model ready.\n")
+SIMILARITY_THRESHOLD = 0.10  # minimum cosine similarity for retrieval
 
 
 # ---------------------------------------------------------------------------
@@ -89,15 +96,29 @@ def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVE
 # ---------------------------------------------------------------------------
 
 def get_embedding(text: str) -> list[float]:
-    """Return the embedding vector for a single piece of text."""
-    vec = embedding_model.encode(text)
-    return vec.tolist()
+    """Return the embedding vector for a single piece of text via OpenRouter."""
+    # Use raw HTTP because the openai client can't parse OpenRouter's embedding response
+    data = json.dumps({"model": EMBEDDING_MODEL, "input": text}).encode()
+    req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/embeddings",
+        data=data,
+        headers={
+            "Authorization": f"Bearer {OPEN_ROUTER_API_KEY}",
+            "Content-Type": "application/json",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        body = json.loads(resp.read().decode())
+    return body["data"][0]["embedding"]
 
 
 def get_embeddings_batch(texts: list[str]) -> list[list[float]]:
-    """Return embedding vectors for a batch of texts (much faster)."""
-    vecs = embedding_model.encode(texts, show_progress_bar=True)
-    return vecs.tolist()
+    """Return embedding vectors for a batch of texts via OpenRouter."""
+    embeddings = []
+    for i, text in enumerate(texts):
+        print(f"    Embedding chunk {i + 1}/{len(texts)} ...")
+        embeddings.append(get_embedding(text))
+    return embeddings
 
 
 def file_hash(path: str) -> str:
@@ -113,18 +134,18 @@ def file_hash(path: str) -> str:
 # Build / load embeddings store
 # ---------------------------------------------------------------------------
 
-def build_or_load_embeddings(pdf_path: str) -> list[dict]:
+def build_or_load_embeddings(pdf_path: str, embeddings_path: str) -> list[dict]:
     """
-    If embeddings.json already exists and was built from the same PDF,
+    If the embeddings JSON already exists and was built from the same PDF,
     load and return it.  Otherwise extract -> chunk -> embed -> save.
     """
     pdf_hash = file_hash(pdf_path)
 
-    if os.path.exists(EMBEDDINGS_PATH):
-        with open(EMBEDDINGS_PATH, "r", encoding="utf-8") as f:
+    if os.path.exists(embeddings_path):
+        with open(embeddings_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         if data.get("pdf_hash") == pdf_hash:
-            print(f"Loaded {len(data['chunks'])} cached chunks from {EMBEDDINGS_PATH}")
+            print(f"Loaded {len(data['chunks'])} cached chunks from {embeddings_path}")
             return data["chunks"]
         else:
             print("PDF changed - rebuilding embeddings ...")
@@ -149,9 +170,9 @@ def build_or_load_embeddings(pdf_path: str) -> list[dict]:
 
     # Save
     store = {"pdf_hash": pdf_hash, "chunks": chunk_records}
-    with open(EMBEDDINGS_PATH, "w", encoding="utf-8") as f:
+    with open(embeddings_path, "w", encoding="utf-8") as f:
         json.dump(store, f, ensure_ascii=False)
-    print(f"  Saved embeddings to {EMBEDDINGS_PATH}\n")
+    print(f"  Saved embeddings to {embeddings_path}\n")
 
     return chunk_records
 
@@ -219,7 +240,7 @@ def rag_query(question: str, chunks: list[dict]) -> str:
     # Step 2: Generate
     print("Generating answer ...\n")
     system_prompt = (
-        "You are an expert assistant for the JKU Linz Wirtschaftsinformatik master's program. "
+        "You are an expert assistant for JKU Linz Wirtschaftsinformatik programs. "
         "Answer the user's question based ONLY on the provided context passages from the official curriculum document. "
         "If the context does not contain enough information, say so. "
         "Always answer in the same language the user uses."
@@ -247,15 +268,43 @@ Question: {question}"""
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    import sys
+
+    # Test mode: python rag.py --test "question" [master|bachelor]
+    if len(sys.argv) >= 3 and sys.argv[1] == "--test":
+        test_question = sys.argv[2]
+        prog = sys.argv[3] if len(sys.argv) >= 4 else "master"
+        doc = DOCUMENTS[prog]
+        try:
+            chunks_db = build_or_load_embeddings(doc["pdf"], doc["embeddings"])
+            answer = rag_query(test_question, chunks_db)
+            result = f"Question: {test_question}\n\n=== Answer ===\n{answer}\n"
+        except Exception as e:
+            result = f"Error: {type(e).__name__}: {e}"
+
+        with open("rag_test_output.txt", "w", encoding="utf-8") as f:
+            f.write(result)
+        sys.exit(0)
+
     print("=" * 60)
-    print("  Wirtschaftsinformatik Master @ JKU - RAG Q&A System")
+    print("  Wirtschaftsinformatik @ JKU - RAG Q&A System")
     print("=" * 60)
     print()
 
-    # Build or load the embedding index
-    chunks_db = build_or_load_embeddings(PDF_PATH)
+    # Select program type
+    program_type = ""
+    while program_type not in DOCUMENTS:
+        print("Please select the program type:")
+        for key, doc in DOCUMENTS.items():
+            print(f"  {key}: {doc['label']}")
+        program_type = input("Your choice (master/bachelor): ").strip().lower()
 
-    print("\nReady! Ask questions about the Wirtschaftsinformatik master's program.")
+    # Build or load the embedding index for the selected program
+    doc = DOCUMENTS[program_type]
+    print(f"\nSelected: {doc['label']}\n")
+    chunks_db = build_or_load_embeddings(doc["pdf"], doc["embeddings"])
+
+    print("\nReady! Ask questions about the Wirtschaftsinformatik program.")
     print("Type 'quit' or 'exit' to stop.\n")
 
     while True:
