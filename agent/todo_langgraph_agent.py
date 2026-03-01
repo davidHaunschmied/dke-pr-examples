@@ -2,17 +2,7 @@
 LLM Agent: TODO List Assistant using LangGraph's prebuilt ReAct agent.
 
 Functionally identical to todo_react_agent.py, but uses the LangGraph framework
-instead of a hand-rolled Thought → Action → Observation loop.  Comparing both
-files shows what a framework like LangGraph automates for you:
-
-  todo_react_agent.py (manual)          todo_langgraph_agent.py (framework)
-  ──────────────────────────────        ──────────────────────────────────────
-  - hand-parsed Thought/Action          - LangGraph handles the ReAct loop
-  - manual memory list                  - built-in message state
-  - custom system prompt with           - tools declared as plain functions
-    format examples                       with @tool decorator
-  - regex-based output parsing          - automatic tool calling via LLM
-  - explicit iteration loop             - graph.invoke() runs until done
+instead of a hand-rolled Thought → Action → Observation loop.
 
 Uses:
 - LangGraph + LangChain for the agent framework
@@ -22,7 +12,6 @@ Uses:
 
 import os
 import json
-import threading
 import warnings
 
 from dotenv import load_dotenv
@@ -59,17 +48,13 @@ SYSTEM_PROMPT = (
 # ---------------------------------------------------------------------------
 
 TODO_FILE = os.path.join(os.path.dirname(__file__), "todos.json")
-_todo_lock = threading.Lock()
 
 
 def _load_todos() -> list[dict]:
     """Load todos from the JSON file, or return an empty list."""
     if os.path.exists(TODO_FILE):
-        try:
-            with open(TODO_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except (json.JSONDecodeError, ValueError):
-            return []
+        with open(TODO_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
     return []
 
 
@@ -86,12 +71,11 @@ def _save_todos(todos: list[dict]):
 @tool
 def add_todo(description: str) -> str:
     """Add a new todo item. Input: the description text."""
-    with _todo_lock:
-        todos = _load_todos()
-        new_id = max((t["id"] for t in todos), default=0) + 1
-        todo = {"id": new_id, "description": description.strip(), "done": False}
-        todos.append(todo)
-        _save_todos(todos)
+    todos = _load_todos()
+    new_id = max((t["id"] for t in todos), default=0) + 1
+    todo = {"id": new_id, "description": description.strip(), "done": False}
+    todos.append(todo)
+    _save_todos(todos)
     return f"Added todo #{new_id}: '{todo['description']}'"
 
 
@@ -111,26 +95,24 @@ def list_todos() -> str:
 @tool
 def complete_todo(todo_id: int) -> str:
     """Mark a todo as done. Input: the todo ID number."""
-    with _todo_lock:
-        todos = _load_todos()
-        for t in todos:
-            if t["id"] == todo_id:
-                t["done"] = True
-                _save_todos(todos)
-                return f"Marked todo #{todo_id} ('{t['description']}') as done."
+    todos = _load_todos()
+    for t in todos:
+        if t["id"] == todo_id:
+            t["done"] = True
+            _save_todos(todos)
+            return f"Marked todo #{todo_id} ('{t['description']}') as done."
     return f"Error: No todo with ID #{todo_id} found."
 
 
 @tool
 def delete_todo(todo_id: int) -> str:
     """Delete a todo permanently. Input: the todo ID number."""
-    with _todo_lock:
-        todos = _load_todos()
-        for i, t in enumerate(todos):
-            if t["id"] == todo_id:
-                removed = todos.pop(i)
-                _save_todos(todos)
-                return f"Deleted todo #{todo_id}: '{removed['description']}'."
+    todos = _load_todos()
+    for i, t in enumerate(todos):
+        if t["id"] == todo_id:
+            removed = todos.pop(i)
+            _save_todos(todos)
+            return f"Deleted todo #{todo_id}: '{removed['description']}'."
     return f"Error: No todo with ID #{todo_id} found."
 
 

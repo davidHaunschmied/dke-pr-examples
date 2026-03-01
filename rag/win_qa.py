@@ -112,22 +112,11 @@ def get_embedding(text: str) -> list[float]:
     return body["data"][0]["embedding"]
 
 
-def get_embeddings_batch(texts: list[str]) -> list[list[float]]:
-    """Return embedding vectors for a batch of texts via OpenRouter."""
-    embeddings = []
-    for i, text in enumerate(texts):
-        print(f"    Embedding chunk {i + 1}/{len(texts)} ...")
-        embeddings.append(get_embedding(text))
-    return embeddings
-
 
 def file_hash(path: str) -> str:
     """Return the SHA-256 hash of a file."""
-    h = hashlib.sha256()
     with open(path, "rb") as f:
-        for block in iter(lambda: f.read(8192), b""):
-            h.update(block)
-    return h.hexdigest()
+        return hashlib.sha256(f.read()).hexdigest()
 
 
 # ---------------------------------------------------------------------------
@@ -159,9 +148,12 @@ def build_or_load_embeddings(pdf_path: str, embeddings_path: str) -> list[dict]:
     chunks = chunk_text(text)
     print(f"  Created {len(chunks)} chunks (size={CHUNK_SIZE}, overlap={CHUNK_OVERLAP}).")
 
-    # Embed (batch for speed)
+    # Embed
     print("  Generating embeddings (this may take a moment) ...")
-    vectors = get_embeddings_batch(chunks)
+    vectors = []
+    for i, chunk in enumerate(chunks):
+        print(f"    Embedding chunk {i + 1}/{len(chunks)} ...")
+        vectors.append(get_embedding(chunk))
 
     chunk_records = [
         {"text": chunks[i], "embedding": vectors[i]}
