@@ -1,5 +1,5 @@
 venv
 .env
 .idea
-db/*_embeddings.json
-todos.json
+rag/db/*_embeddings.json
+agent/todos.json
