@@ -29,7 +29,7 @@ from dotenv import load_dotenv
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 
-# Suppress LangGraph deprecation warning (create_react_agent still works from prebuilt)
+# Suppress LangGraph deprecation warning (the function works fine from prebuilt)
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="langgraph")
 from langgraph.prebuilt import create_react_agent
 
