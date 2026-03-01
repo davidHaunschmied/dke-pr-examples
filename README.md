@@ -3,7 +3,7 @@
 This repository contains three AI-based Python programs, ordered by complexity:
 - **context_engineering.py**: A German ↔ English translator that demonstrates how careful prompt design ("context engineering") steers LLM output — no tools, no external data.
 - **rag.py**: A Retrieval-Augmented Generation (RAG) system that answers questions about the JKU Linz "Wirtschaftsinformatik" Bachelor and Master programs using document-based retrieval and OpenRouter for embeddings and inference.
-- **llm-agent.py**: An autonomous agent that solves tasks using tools and OpenRouter, following the ReAct framework.
+- **llm-agent.py**: A TODO list assistant that manages tasks via natural language, using autonomous tool use (ReAct framework) and OpenRouter.
 
 ## Requirements
 
@@ -68,7 +68,18 @@ Text: I'm looking forward to the weekend.
 
 ## llm-agent.py
 
-The agent solves tasks using tools such as a calculator or web search. It communicates in a Thought → Action → Observation loop, following the ReAct framework.
+A TODO list assistant that lets you manage tasks using **natural language**. Under the hood it follows the ReAct framework (Thought → Action → Observation loop), autonomously choosing CRUD tools to fulfil each request.
+
+### Available tools
+
+| Tool | Description |
+|---|---|
+| `add_todo(text)` | Adds a new todo item |
+| `list_todos()` | Lists all todos with IDs and status |
+| `complete_todo(id)` | Marks a todo as done |
+| `delete_todo(id)` | Permanently deletes a todo |
+
+Todos are persisted in `todos.json` so they survive restarts.
 
 ### How to start
 
@@ -78,43 +89,10 @@ python llm-agent.py
 
 ### Process
 
-1. After starting, you are prompted to enter a task (e.g., `What is 15 * 7?`).
-2. The agent uses available tools to solve the task step by step.
-3. The process follows the ReAct framework:
-   - **Thought**: The agent explains its reasoning for the next step.
-   - **Action**: The agent chooses a tool and provides input.
-   - **Observation**: The agent receives the tool's output and continues reasoning.
-4. The final answer is given with an explanation of the reasoning and tool results.
-
-### Example output
-
-```
-Enter your task: What is 3 * 2?
-
---- Iteration 1 ---
-Current memory: []
-
-LLM Output:
-Thought: I need to calculate 3 * 2 to answer the question. I will use the calculator tool for this.
-Action: calculator(3 * 2)
-
-Observation: 6
-
---- Iteration 2 ---
-Current memory: [{'Thought': 'I need to calculate 3 * 2 to answer the question. I will use the calculator tool for this.', 'Action': 'calculator(3 * 2)', 'Observation': '6'}]
-
-LLM Output:
-Thought: The calculator returned 6, which means the answer to 3 * 2 is 6. I am explaining this result so the user understands how I arrived at the answer.
-Action: final_answer(6)
-
-=== Final Answer ===
-6
-
-Final Result: 6
-```
-
-**Explanation:**
-The agent follows the ReAct framework, reasoning about each step, choosing actions, and observing results before providing the final answer with a short explanation.
+1. The system prompt and available tools are shown at startup.
+2. You type natural-language requests (e.g. "Add buy groceries to my list").
+3. The agent reasons step by step (Thought, Action, Observation) and calls the appropriate tools.
+4. Once the request is fulfilled, the agent responds with a friendly summary.
 
 ## rag.py
 
@@ -199,7 +177,6 @@ You can adjust these constants at the top of `rag.py`:
 
 - The three scripts illustrate increasing levels of complexity: **context engineering** (prompt design only) → **RAG** (retrieval + generation) → **agent** (autonomous tool use).
 - All scripts use OpenRouter with free models. Set `OPEN_ROUTER_API_KEY` in your `.env` file or as an environment variable.
-- The web search tool in the agent is a mock and does not provide real search results.
 
 ---
 

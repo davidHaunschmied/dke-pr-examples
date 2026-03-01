@@ -1,16 +1,18 @@
 """
-LLM Agent that solves tasks using a Thought → Action → Observation loop (ReAct).
+LLM Agent: TODO List Assistant using a Thought → Action → Observation loop (ReAct).
 
-Demonstrates autonomous tool use: the agent reasons about each step, picks a
-tool, observes the result, and repeats until it reaches a final answer.  This is
-the most complex of the three levels:  context_engineering  →  rag  →  agent.
+Demonstrates autonomous tool use: the agent reasons about the user's natural-
+language request, picks the right CRUD tool, observes the result, and responds.
+This is the most complex of the three levels:  context_engineering → rag → agent.
 
 Uses:
 - OpenRouter (via openai client) for LLM inference
+- A simple JSON file for persistent TODO storage
 """
 
 import os
 import re
+import json
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -65,7 +67,7 @@ class SimpleAgent:
         for name, tool in self.tools.items():
             tool_descriptions += f"- {name}: {tool.description}\n"
 
-        prompt = f"""You are an autonomous agent that solves tasks using a Thought → Action → Observation loop, step by step.
+        prompt = f"""You are a helpful TODO list assistant. You manage the user's tasks using a Thought → Action → Observation loop.
 
 You have access to these tools:
 {tool_descriptions}
@@ -77,24 +79,36 @@ Action: [tool_name(arguments)]
 Do NOT include the Observation in your response; I will provide it after you take an Action.
 
 MANDATORY:
-- Every response MUST begin with a Thought: line, followed by an Action: line. Never output an Action without a preceding Thought.
-- If you ever omit the Thought line, you will be penalized.
-- Do NOT output the final answer until you have received all necessary Observations and completed all required steps.
+- Every response MUST begin with a Thought: line, followed by an Action: line.
+- Only output ONE Thought and ONE Action per step.
 - After each Action, WAIT for the Observation before continuing.
-- When you are ready to give the final answer, use:
-Thought: [your reasoning for the final answer, and explain any tool results so the user understands them. The user cannot see the raw tool results.]
-Action: final_answer(result)
+- When you have completed the user's request and want to respond, use:
+  Thought: [summarize what you did in a friendly way]
+  Action: final_answer(your response to the user)
 
 EXAMPLES:
-Step:
-Thought: I need to calculate 2 + 2 to answer the question.
-Action: calculator(2 + 2)
 
-Final step:
-Thought: The calculator returned 4, which means the answer to 2 + 2 is 4. I am explaining this result so the user understands how I arrived at the answer.
-Action: final_answer(4)
+User says: "Add buy groceries to my list"
+Thought: The user wants to add a new todo item called "buy groceries".
+Action: add_todo(buy groceries)
 
-Never skip steps. Never omit the Thought: line. Always use this exact format and process, step by step."""
+User says: "What's on my list?"
+Thought: The user wants to see all their todos. I should list them.
+Action: list_todos()
+
+User says: "I finished the first task"
+Thought: The user completed a task. I should first list the todos to find which one is first, then mark it done.
+Action: list_todos()
+
+After seeing the list:
+Thought: The first todo is "buy groceries" with ID 1. I'll mark it as complete.
+Action: complete_todo(1)
+
+User says: "Remove the groceries task"
+Thought: I need to find and delete the todo about groceries. Let me list them first.
+Action: list_todos()
+
+Never skip steps. Always use this exact format."""
         return prompt
 
     def parse_action(self, text):
@@ -176,20 +190,80 @@ Never skip steps. Never omit the Thought: line. Always use this exact format and
 
 
 # ---------------------------------------------------------------------------
-# Built-in tools
+# TODO storage (simple JSON file)
 # ---------------------------------------------------------------------------
 
-def calculator(args):
-    # Simple eval-based calculator (use with caution in production)
+TODO_FILE = os.path.join(os.path.dirname(__file__), "todos.json")
+
+
+def _load_todos() -> list[dict]:
+    """Load todos from the JSON file, or return an empty list."""
+    if os.path.exists(TODO_FILE):
+        with open(TODO_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
+
+
+def _save_todos(todos: list[dict]):
+    """Persist todos to the JSON file."""
+    with open(TODO_FILE, "w", encoding="utf-8") as f:
+        json.dump(todos, f, ensure_ascii=False, indent=2)
+
+
+# ---------------------------------------------------------------------------
+# Built-in tools (TODO CRUD)
+# ---------------------------------------------------------------------------
+
+def add_todo(description: str) -> str:
+    """Add a new todo item and return confirmation."""
+    todos = _load_todos()
+    new_id = max((t["id"] for t in todos), default=0) + 1
+    todo = {"id": new_id, "description": description.strip(), "done": False}
+    todos.append(todo)
+    _save_todos(todos)
+    return f"Added todo #{new_id}: '{todo['description']}'"
+
+
+def list_todos(_args: str = "") -> str:
+    """Return all todos as a formatted string."""
+    todos = _load_todos()
+    if not todos:
+        return "The TODO list is empty."
+    lines = []
+    for t in todos:
+        status = "✓" if t["done"] else "○"
+        lines.append(f"  [{status}] #{t['id']}: {t['description']}")
+    return "Current TODOs:\n" + "\n".join(lines)
+
+
+def complete_todo(args: str) -> str:
+    """Mark a todo as done by its ID."""
     try:
-        result = eval(args)
-        return str(result)
-    except Exception as e:
-        return f"Error: {str(e)}"
+        todo_id = int(args.strip())
+    except ValueError:
+        return f"Error: '{args}' is not a valid ID. Please provide a number."
+    todos = _load_todos()
+    for t in todos:
+        if t["id"] == todo_id:
+            t["done"] = True
+            _save_todos(todos)
+            return f"Marked todo #{todo_id} ('{t['description']}') as done."
+    return f"Error: No todo with ID #{todo_id} found."
 
 
-def web_search(args):
-    return f"Mock search results for: {args}"
+def delete_todo(args: str) -> str:
+    """Delete a todo by its ID."""
+    try:
+        todo_id = int(args.strip())
+    except ValueError:
+        return f"Error: '{args}' is not a valid ID. Please provide a number."
+    todos = _load_todos()
+    for i, t in enumerate(todos):
+        if t["id"] == todo_id:
+            removed = todos.pop(i)
+            _save_todos(todos)
+            return f"Deleted todo #{todo_id}: '{removed['description']}'."
+    return f"Error: No todo with ID #{todo_id} found."
 
 
 # ---------------------------------------------------------------------------
@@ -197,30 +271,53 @@ def web_search(args):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    # Create agent
+    # Create agent with TODO tools
     agent = SimpleAgent()
 
-    # Add tools
-    calc_tool = SimpleTool(
-        name="calculator",
-        func=calculator,
-        description="Performs mathematical calculations. Input should be a valid Python expression like '2+2' or '15*7'"
-    )
-    agent.add_tool(calc_tool)
+    agent.add_tool(SimpleTool(
+        name="add_todo",
+        func=add_todo,
+        description="Adds a new todo item. Input: the description text, e.g. add_todo(Buy groceries)"
+    ))
+    agent.add_tool(SimpleTool(
+        name="list_todos",
+        func=list_todos,
+        description="Lists all current todos with their IDs and status. No input needed: list_todos()"
+    ))
+    agent.add_tool(SimpleTool(
+        name="complete_todo",
+        func=complete_todo,
+        description="Marks a todo as done. Input: the todo ID number, e.g. complete_todo(1)"
+    ))
+    agent.add_tool(SimpleTool(
+        name="delete_todo",
+        func=delete_todo,
+        description="Deletes a todo permanently. Input: the todo ID number, e.g. delete_todo(1)"
+    ))
 
-    search_tool = SimpleTool(
-        name="web_search",
-        func=web_search,
-        description="Searches the web for information. Input should be a search query string"
-    )
-    agent.add_tool(search_tool)
+    print("=" * 60)
+    print("  TODO List Assistant  (LLM Agent Demo)")
+    print("=" * 60)
 
-    print(f"\n-------------------------- System prompt -----------------------\n"
-          f"{agent.get_system_prompt()}"
-          f"\n----------------------------------------------------------------\n")
+    print("\n--- System prompt ---")
+    print(agent.get_system_prompt())
+    print("--- End of system prompt ---\n")
 
-    # Prompt for task
-    task = input("Enter your task: ")
-    print(f"\nTask: {task}\n")
-    result = agent.run(task)
-    print(f"\n\nFinal Result: {result}")
+    print("Manage your TODO list using natural language.")
+    print("Type 'quit' or 'exit' to stop.\n")
+
+    while True:
+        try:
+            user_input = input("You: ").strip()
+        except (KeyboardInterrupt, EOFError):
+            print("\nGoodbye!")
+            break
+
+        if not user_input:
+            continue
+        if user_input.lower() in ("quit", "exit", "q"):
+            print("Goodbye!")
+            break
+
+        result = agent.run(user_input)
+        print(f"\nAssistant: {result}\n")
