@@ -22,10 +22,15 @@ Uses:
 
 import os
 import json
+import threading
+import warnings
 
 from dotenv import load_dotenv
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
+
+# Suppress LangGraph deprecation warning (create_react_agent still works from prebuilt)
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="langgraph")
 from langgraph.prebuilt import create_react_agent
 
 load_dotenv()
@@ -54,13 +59,17 @@ SYSTEM_PROMPT = (
 # ---------------------------------------------------------------------------
 
 TODO_FILE = os.path.join(os.path.dirname(__file__), "todos.json")
+_todo_lock = threading.Lock()
 
 
 def _load_todos() -> list[dict]:
     """Load todos from the JSON file, or return an empty list."""
     if os.path.exists(TODO_FILE):
-        with open(TODO_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(TODO_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, ValueError):
+            return []
     return []
 
 
@@ -77,11 +86,12 @@ def _save_todos(todos: list[dict]):
 @tool
 def add_todo(description: str) -> str:
     """Add a new todo item. Input: the description text."""
-    todos = _load_todos()
-    new_id = max((t["id"] for t in todos), default=0) + 1
-    todo = {"id": new_id, "description": description.strip(), "done": False}
-    todos.append(todo)
-    _save_todos(todos)
+    with _todo_lock:
+        todos = _load_todos()
+        new_id = max((t["id"] for t in todos), default=0) + 1
+        todo = {"id": new_id, "description": description.strip(), "done": False}
+        todos.append(todo)
+        _save_todos(todos)
     return f"Added todo #{new_id}: '{todo['description']}'"
 
 
@@ -101,24 +111,26 @@ def list_todos() -> str:
 @tool
 def complete_todo(todo_id: int) -> str:
     """Mark a todo as done. Input: the todo ID number."""
-    todos = _load_todos()
-    for t in todos:
-        if t["id"] == todo_id:
-            t["done"] = True
-            _save_todos(todos)
-            return f"Marked todo #{todo_id} ('{t['description']}') as done."
+    with _todo_lock:
+        todos = _load_todos()
+        for t in todos:
+            if t["id"] == todo_id:
+                t["done"] = True
+                _save_todos(todos)
+                return f"Marked todo #{todo_id} ('{t['description']}') as done."
     return f"Error: No todo with ID #{todo_id} found."
 
 
 @tool
 def delete_todo(todo_id: int) -> str:
     """Delete a todo permanently. Input: the todo ID number."""
-    todos = _load_todos()
-    for i, t in enumerate(todos):
-        if t["id"] == todo_id:
-            removed = todos.pop(i)
-            _save_todos(todos)
-            return f"Deleted todo #{todo_id}: '{removed['description']}'."
+    with _todo_lock:
+        todos = _load_todos()
+        for i, t in enumerate(todos):
+            if t["id"] == todo_id:
+                removed = todos.pop(i)
+                _save_todos(todos)
+                return f"Deleted todo #{todo_id}: '{removed['description']}'."
     return f"Error: No todo with ID #{todo_id} found."
 
 
