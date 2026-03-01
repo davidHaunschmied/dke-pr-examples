@@ -2,15 +2,15 @@
 
 This repository contains three AI-based Python programs:
 - **llm-agent.py**: An autonomous agent that solves tasks using tools and Google Gemini.
-- **rag.py**: A Retrieval-Augmented Generation (RAG) system that fetches weather data and answers questions using Gemini.
+- **rag.py**: A Retrieval-Augmented Generation (RAG) system that answers questions about the JKU Linz "Wirtschaftsinformatik" master's program using document-based retrieval and OpenRouter for inference.
 - **openrouter.py**: A demonstration script for using OpenRouter API and testing rate limits of free models.
 
 ## Requirements
 
 - Python 3.8 or newer
-- API key for Google Gemini (environment variable `GEMINI_API_KEY`) - required for llm-agent.py and rag.py
-- API key for OpenRouter (environment variable `OPEN_ROUTER_API_KEY`) - required for openrouter.py
-- Internet connection (for weather data and Gemini API)
+- API key for Google Gemini (environment variable `GEMINI_API_KEY`) - required for llm-agent.py
+- API key for OpenRouter (environment variable `OPEN_ROUTER_API_KEY`) - required for openrouter.py and rag.py
+- Internet connection (for OpenRouter API and Gemini API)
 - Recommended: Virtual environment (`python -m venv .venv`)
 
 Install the required packages:
@@ -124,47 +124,71 @@ The agent follows the ReAct framework, reasoning about each step, choosing actio
 
 ## rag.py
 
-The RAG system answers weather-related questions for various cities.
+A document-based RAG (Retrieval-Augmented Generation) system that answers questions about the JKU Linz **Wirtschaftsinformatik** master's program.
+
+### How it works
+
+1. **PDF extraction** – The official curriculum PDF (`wirtschaftsinformatik_master.pdf`) is parsed with PyPDF2.
+2. **Chunking** – The extracted text is split into overlapping 500-character chunks.
+3. **Embedding** – Each chunk is embedded locally using `sentence-transformers` (all-MiniLM-L6-v2). Embeddings are cached in `embeddings.json` so they only need to be computed once.
+4. **Retrieval** – When you ask a question, your query is embedded and compared to all chunk embeddings via cosine similarity. The top 3 most relevant chunks (above a similarity threshold) are returned.
+5. **Generation** – The retrieved chunks plus your question are sent to an OpenRouter LLM (`google/gemini-2.0-flash-exp:free`) which generates the answer.
 
 ### How to start
 
+First, set your OpenRouter API key:
+```cmd
+$env:OPEN_ROUTER_API_KEY="your_api_key_here"
+```
+
+Then run the script:
 ```cmd
 python rag.py
 ```
 
-### Process
-
-1. Select a city from the list (e.g., `tokyo`).
-2. Enter a weather-related question (e.g., `How warm is it?`).
-3. The program fetches current weather data and generates an answer using Gemini.
+On the first run, the embedding model (~80 MB) will be downloaded and the PDF will be chunked and embedded. Subsequent runs use the cached `embeddings.json`.
 
 ### Example output
 
 ```
-Available cities: london, new york, tokyo, sydney, paris, berlin, rome, moscow
+============================================================
+  Wirtschaftsinformatik Master @ JKU - RAG Q&A System
+============================================================
 
-Enter city name: tokyo
+Loading embedding model (first run downloads ~80 MB) ...
+Embedding model ready.
 
-Ask a question about the weather: How warm is it?
+Loaded 42 cached chunks from embeddings.json
 
-Retrieving weather data...
-Weather in tokyo:
-- Temperature: 22.8°C
-- Humidity: 61%
-- Wind speed: 5.5 km/h
-- Next hours temperatures: [20.2, 20.8, 21.4, 22.6, 23.4, 23.5]
-- Precipitation probability: [0, 0, 0, 0, 0, 3]%
+Ready! Ask questions about the Wirtschaftsinformatik master's program.
+Type 'quit' or 'exit' to stop.
 
-Generating answer...
+Your question: Welche Pflichtfächer gibt es?
+
+Retrieving relevant passages ...
+  Retrieved 3 relevant chunks (similarities: [0.612, 0.534, 0.489])
+Generating answer ...
+
 === Answer ===
-It is 22.8°C.
+Die Pflichtfächer im Masterstudium Wirtschaftsinformatik umfassen ...
 ```
+
+### Configuration
+
+You can adjust these constants at the top of `rag.py`:
+
+| Constant | Default | Description |
+|---|---|---|
+| `CHUNK_SIZE` | 500 | Characters per chunk |
+| `CHUNK_OVERLAP` | 100 | Overlap between consecutive chunks |
+| `TOP_K` | 3 | Number of similar chunks to retrieve |
+| `SIMILARITY_THRESHOLD` | 0.25 | Minimum cosine similarity for retrieval |
+| `INFERENCE_MODEL` | `google/gemini-2.0-flash-exp:free` | OpenRouter model for answer generation |
 
 ## Notes
 
-- The Gemini API key must be set as the environment variable `GEMINI_API_KEY` for llm-agent.py and rag.py.
-- The OpenRouter API key must be set as the environment variable `OPEN_ROUTER_API_KEY` for openrouter.py. Get your free API key at [OpenRouter](https://openrouter.ai/).
-- Weather data is retrieved from [Open-Meteo](https://open-meteo.com/).
+- The Gemini API key must be set as the environment variable `GEMINI_API_KEY` for llm-agent.py.
+- The OpenRouter API key must be set as the environment variable `OPEN_ROUTER_API_KEY` for openrouter.py and rag.py. Get your free API key at [OpenRouter](https://openrouter.ai/).
 - The web search tool in the agent is a mock and does not provide real search results.
 
 ---
