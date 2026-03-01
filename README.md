@@ -1,9 +1,9 @@
 # dke-pr-examples
 
 This repository contains three AI-based Python programs, ordered by complexity:
-- **context_engineering/context_engineering.py**: A German ↔ English translator that demonstrates how careful prompt design ("context engineering") steers LLM output — no tools, no external data.
-- **rag/rag.py**: A Retrieval-Augmented Generation (RAG) system that answers questions about the JKU Linz "Wirtschaftsinformatik" Bachelor and Master programs using document-based retrieval and OpenRouter for embeddings and inference.
-- **agent/react_agent.py**: A TODO list assistant that manages tasks via natural language, using autonomous tool use (ReAct framework) and OpenRouter.
+- **context_engineering/de_en_translator.py**: A German ↔ English translator that demonstrates how careful prompt design ("context engineering") steers LLM output — no tools, no external data.
+- **rag/win_qa.py**: A Retrieval-Augmented Generation (RAG) system that answers questions about the JKU Linz "Wirtschaftsinformatik" Bachelor and Master programs using document-based retrieval and OpenRouter for embeddings and inference.
+- **agent/todo_react_agent.py**: A TODO list assistant that manages tasks via natural language, using autonomous tool use (ReAct framework) and OpenRouter.
 
 ## Requirements
 
@@ -18,7 +18,7 @@ pip install -r requirements.txt
 ```
 
 
-## context_engineering/context_engineering.py
+## context_engineering/de_en_translator.py
 
 A German ↔ English translator that demonstrates **context engineering** — the practice of carefully designing the system prompt to control LLM behaviour without any tools, retrieval, or external data.
 
@@ -29,7 +29,7 @@ Context engineering is about crafting the *input context* (system prompt, user p
 ### How to start
 
 ```cmd
-python context_engineering/context_engineering.py
+python context_engineering/de_en_translator.py
 ```
 
 The script prints its system prompt at startup so you can see exactly which instructions shape the model's output.
@@ -66,7 +66,7 @@ Text: I'm looking forward to the weekend.
 | Idiom handling | "Find an equivalent idiom rather than translating literally" |
 | Output formatting | "Output ONLY the translated text. No explanations, no notes." |
 
-## agent/react_agent.py
+## agent/todo_react_agent.py
 
 A TODO list assistant that lets you manage tasks using **natural language**. Under the hood it follows the ReAct framework (Thought → Action → Observation loop), autonomously choosing CRUD tools to fulfil each request.
 
@@ -84,7 +84,7 @@ Todos are persisted in `agent/todos.json` so they survive restarts.
 ### How to start
 
 ```cmd
-python agent/react_agent.py
+python agent/todo_react_agent.py
 ```
 
 ### Process
@@ -94,7 +94,7 @@ python agent/react_agent.py
 3. The agent reasons step by step (Thought, Action, Observation) and calls the appropriate tools.
 4. Once the request is fulfilled, the agent responds with a friendly summary.
 
-## rag/rag.py
+## rag/win_qa.py
 
 A document-based RAG (Retrieval-Augmented Generation) system that answers questions about the JKU Linz **Wirtschaftsinformatik** Bachelor and Master programs.
 
@@ -111,7 +111,7 @@ A document-based RAG (Retrieval-Augmented Generation) system that answers questi
 
 ```
 rag/
-  rag.py                             # Main RAG script
+  win_qa.py                          # Main RAG script
   db/
     win_bachelor.pdf                 # Bachelor curriculum PDF
     win_bachelor_embeddings.json     # Cached embeddings for Bachelor
@@ -128,7 +128,7 @@ $env:OPEN_ROUTER_API_KEY="your_api_key_here"
 
 Then run the script:
 ```cmd
-python rag/rag.py
+python rag/win_qa.py
 ```
 
 On the first run for a given program, the PDF will be chunked and embedded via the OpenRouter API. Subsequent runs use the cached embeddings JSON.
@@ -164,7 +164,7 @@ Die Pflichtfächer im Masterstudium Wirtschaftsinformatik umfassen ...
 
 ### Configuration
 
-You can adjust these constants at the top of `rag.py`:
+You can adjust these constants at the top of `win_qa.py`:
 
 | Constant | Default | Description |
 |---|---|---|
