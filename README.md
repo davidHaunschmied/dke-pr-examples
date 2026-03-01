@@ -1,9 +1,10 @@
 # dke-pr-examples
 
-This repository contains three AI-based Python programs, ordered by complexity:
+This repository contains four AI-based Python programs, ordered by complexity:
 - **context_engineering/de_en_translator.py**: A German ↔ English translator that demonstrates how careful prompt design ("context engineering") steers LLM output — no tools, no external data.
 - **rag/win_qa.py**: A Retrieval-Augmented Generation (RAG) system that answers questions about the JKU Linz "Wirtschaftsinformatik" Bachelor and Master programs using document-based retrieval and OpenRouter for embeddings and inference.
-- **agent/todo_react_agent.py**: A TODO list assistant that manages tasks via natural language, using autonomous tool use (ReAct framework) and OpenRouter.
+- **agent/todo_react_agent.py**: A TODO list assistant using a hand-rolled ReAct loop — shows how an agent works under the hood.
+- **agent/todo_langgraph_agent.py**: The same TODO assistant built with LangGraph — shows how a framework automates the agent loop.
 
 ## Requirements
 
@@ -94,6 +95,26 @@ python agent/todo_react_agent.py
 3. The agent reasons step by step (Thought, Action, Observation) and calls the appropriate tools.
 4. Once the request is fulfilled, the agent responds with a friendly summary.
 
+## agent/todo_langgraph_agent.py
+
+The **same TODO assistant**, but built with [LangGraph](https://langchain-ai.github.io/langgraph/) instead of a hand-rolled loop. Comparing the two files shows what a framework automates for you:
+
+| Manual (`todo_react_agent.py`) | Framework (`todo_langgraph_agent.py`) |
+|---|---|
+| Hand-parsed `Thought:` / `Action:` lines | LangGraph handles the ReAct loop |
+| Manual memory list | Built-in message state |
+| Custom system prompt with format examples | Tools declared with `@tool` decorator |
+| Regex-based output parsing | Automatic tool calling via LLM |
+| Explicit iteration loop | `agent.invoke()` runs until done |
+
+### How to start
+
+```cmd
+python agent/todo_langgraph_agent.py
+```
+
+Both agents share the same `agent/todos.json` file, so you can switch between them freely.
+
 ## rag/win_qa.py
 
 A document-based RAG (Retrieval-Augmented Generation) system that answers questions about the JKU Linz **Wirtschaftsinformatik** Bachelor and Master programs.
@@ -177,7 +198,7 @@ You can adjust these constants at the top of `win_qa.py`:
 
 ## Notes
 
-- The three scripts illustrate increasing levels of complexity: **context engineering** (prompt design only) → **RAG** (retrieval + generation) → **agent** (autonomous tool use).
+- The scripts illustrate increasing levels of complexity: **context engineering** (prompt design only) → **RAG** (retrieval + generation) → **agent** (autonomous tool use, manual vs. LangGraph).
 - All scripts use OpenRouter with free models. Set `OPEN_ROUTER_API_KEY` in your `.env` file or as an environment variable.
 
 ---
