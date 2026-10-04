@@ -1,9 +1,20 @@
 """
-LLM Agent: TODO List Assistant using a Thought → Action → Observation loop (ReAct).
+LLM Agent: TODO List Assistant with a hand-written harness (native tool calling).
 
-Demonstrates autonomous tool use: the agent reasons about the user's natural-
-language request, picks the right CRUD tool, observes the result, and responds.
-This is the most complex of the three levels:  context_engineering → rag → agent.
+Level 3 of the context axis: the model itself decides in a loop which tool to
+call. The code around the model is the "harness" - it builds the context, calls
+the model, executes tools, feeds results back and decides when to stop:
+
+    model proposes tool call -> harness executes -> result back into context -> repeat
+
+Modern models have reasoning built in and return structured tool calls, so no
+"Thought:/Action:" text format has to be prompted and parsed any more.
+
+Harness safeguards shown here:
+- hard iteration limit (errors multiply over steps: keep loops short)
+- tool errors are returned to the model as readable messages
+- destructive tool (delete) needs confirmation from the user
+- one JSONL trace per run in traces/todo_react_agent.jsonl
 
 Uses:
 - OpenRouter (via openai client) for LLM inference
@@ -11,11 +22,14 @@ Uses:
 """
 
 import os
-import re
+import sys
 import json
 
 from dotenv import load_dotenv
 from openai import OpenAI
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from tracing import AI_NOTICE, Timer, usage_dict, write_trace  # noqa: E402
 
 load_dotenv()
 
@@ -31,163 +45,13 @@ client = OpenAI(
 )
 
 INFERENCE_MODEL = "nvidia/nemotron-3-nano-30b-a3b:free"
+MAX_ITERATIONS = 10
 
-
-# ---------------------------------------------------------------------------
-# Tool abstraction
-# ---------------------------------------------------------------------------
-
-class SimpleTool:
-    def __init__(self, name, func, description):
-        self.name = name
-        self.func = func
-        self.description = description
-
-    def execute(self, args):
-        return self.func(args)
-
-
-# ---------------------------------------------------------------------------
-# Agent
-# ---------------------------------------------------------------------------
-
-class SimpleAgent:
-    def __init__(self):
-        self.tools = {}
-        self.memory = []
-        self.max_iterations = 10
-        self.system_prompt = None
-
-
-    def add_tool(self, tool):
-        self.tools[tool.name] = tool
-
-    def get_system_prompt(self):
-        tool_descriptions = ""
-        for name, tool in self.tools.items():
-            tool_descriptions += f"- {name}: {tool.description}\n"
-
-        prompt = f"""You are a helpful TODO list assistant. You manage the user's tasks using a Thought → Action → Observation loop.
-
-You have access to these tools:
-{tool_descriptions}
-
-For each step, you MUST strictly follow this format:
-Thought: [your reasoning for this step]
-Action: [tool_name(arguments)]
-
-Do NOT include the Observation in your response; I will provide it after you take an Action.
-
-MANDATORY:
-- Every response MUST begin with a Thought: line, followed by an Action: line.
-- Only output ONE Thought and ONE Action per step.
-- After each Action, WAIT for the Observation before continuing.
-- When you have completed the user's request and want to respond, use:
-  Thought: [summarize what you did in a friendly way]
-  Action: final_answer(your response to the user)
-
-EXAMPLES:
-
-User says: "Add buy groceries to my list"
-Thought: The user wants to add a new todo item called "buy groceries".
-Action: add_todo(buy groceries)
-
-User says: "What's on my list?"
-Thought: The user wants to see all their todos. I should list them.
-Action: list_todos()
-
-User says: "I finished the first task"
-Thought: The user completed a task. I should first list the todos to find which one is first, then mark it done.
-Action: list_todos()
-
-After seeing the list:
-Thought: The first todo is "buy groceries" with ID 1. I'll mark it as complete.
-Action: complete_todo(1)
-
-User says: "Remove the groceries task"
-Thought: I need to find and delete the todo about groceries. Let me list them first.
-Action: list_todos()
-
-Never skip steps. Always use this exact format."""
-        return prompt
-
-    def parse_action(self, text):
-        # Look for the FIRST Action: tool_name(args) that doesn't have an Observation yet
-        lines = text.split('\n')
-        for i, line in enumerate(lines):
-            if line.strip().startswith('Action:'):
-                match = re.search(r'Action:\s*([a-zA-Z_]+)\((.*?)\)', line)
-                if match:
-                    tool_name = match.group(1)
-                    args_str = match.group(2)
-                    return tool_name, args_str
-        return None, None
-
-    def parse_thought(self, text):
-        # Look for the FIRST Thought:
-        lines = text.split('\n')
-        for line in lines:
-            if line.strip().startswith('Thought:'):
-                # Extract everything after 'Thought:'
-                return line.strip()[len('Thought:'):].strip()
-        return "None"
-
-    def run(self, task):
-        self.system_prompt = self.get_system_prompt()
-        self.memory = []
-
-        for iteration in range(self.max_iterations):
-            print(f"\n--- Iteration {iteration + 1} ---")
-            print(f"Current memory: {self.memory}\n")
-
-            user_prompt = f"Task: {task}\n\nMemory:{self.memory}"
-
-            # Get LLM response
-            response = client.chat.completions.create(
-                model=INFERENCE_MODEL,
-                messages=[
-                    {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-            )
-            response_text = response.choices[0].message.content
-            print(f"LLM Output:\n{response_text}")
-
-            # Parse the thought
-            thought = self.parse_thought(response_text)
-
-            # Parse the action
-            tool_name, args_str = self.parse_action(response_text)
-
-            # Check if this is the final answer
-            if tool_name == "final_answer":
-                print(f"\n=== Final Answer ===")
-                print(args_str)
-                return args_str
-
-            # Execute the tool
-            if tool_name in self.tools:
-                tool = self.tools[tool_name]
-                try:
-                    result = tool.execute(args_str)
-                    observation = f"{result}"
-
-                except Exception as e:
-                    observation = f"Error executing tool: {str(e)}"
-            else:
-                observation = f"Tool '{tool_name}' not found. Available tools: {list(self.tools.keys())}"
-
-            print(f"\nObservation: {observation}")
-
-            # Add observation to memory
-            self.memory.append({
-                "Thought": thought,
-                "Action": f"{tool_name}({args_str})",
-                "Observation": observation
-            })
-
-        return "Max iterations reached without finding answer"
-
+SYSTEM_PROMPT = (
+    "You are a helpful TODO list assistant. "
+    "Use the provided tools to manage the user's tasks; look up IDs with list_todos before changing a todo. "
+    "Answer in a friendly, concise way."
+)
 
 # ---------------------------------------------------------------------------
 # TODO storage (simple JSON file)
@@ -224,7 +88,7 @@ def add_todo(description: str) -> str:
     return f"Added todo #{new_id}: '{todo['description']}'"
 
 
-def list_todos(_args: str = "") -> str:
+def list_todos() -> str:
     """Return all todos as a formatted string."""
     todos = _load_todos()
     if not todos:
@@ -236,12 +100,8 @@ def list_todos(_args: str = "") -> str:
     return "Current TODOs:\n" + "\n".join(lines)
 
 
-def complete_todo(args: str) -> str:
+def complete_todo(todo_id: int) -> str:
     """Mark a todo as done by its ID."""
-    try:
-        todo_id = int(args.strip())
-    except ValueError:
-        return f"Error: '{args}' is not a valid ID. Please provide a number."
     todos = _load_todos()
     for t in todos:
         if t["id"] == todo_id:
@@ -251,12 +111,8 @@ def complete_todo(args: str) -> str:
     return f"Error: No todo with ID #{todo_id} found."
 
 
-def delete_todo(args: str) -> str:
+def delete_todo(todo_id: int) -> str:
     """Delete a todo by its ID."""
-    try:
-        todo_id = int(args.strip())
-    except ValueError:
-        return f"Error: '{args}' is not a valid ID. Please provide a number."
     todos = _load_todos()
     for i, t in enumerate(todos):
         if t["id"] == todo_id:
@@ -267,41 +123,104 @@ def delete_todo(args: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Tool schemas (name + description + parameter schema; the description is part of the prompt)
+# ---------------------------------------------------------------------------
+
+def _tool(name, description, params=None, required=()):
+    return {"type": "function", "function": {
+        "name": name,
+        "description": description,
+        "parameters": {"type": "object", "properties": params or {}, "required": list(required)},
+    }}
+
+
+TOOLS = [
+    _tool("add_todo", "Add a new todo item.", {"description": {"type": "string"}}, ["description"]),
+    _tool("list_todos", "List all todos with their IDs and done/open status."),
+    _tool("complete_todo", "Mark a todo as done.", {"todo_id": {"type": "integer"}}, ["todo_id"]),
+    _tool("delete_todo", "Delete a todo permanently (the user must confirm).", {"todo_id": {"type": "integer"}}, ["todo_id"]),
+]
+
+FUNCTIONS = {
+    "add_todo": add_todo,
+    "list_todos": list_todos,
+    "complete_todo": complete_todo,
+    "delete_todo": delete_todo,
+}
+
+
+# ---------------------------------------------------------------------------
+# Harness
+# ---------------------------------------------------------------------------
+
+def execute_tool(name: str, args: dict) -> str:
+    """Run one tool call. Errors become observations the model can react to."""
+    if name not in FUNCTIONS:
+        return f"Error: unknown tool '{name}'. Available tools: {list(FUNCTIONS)}"
+    if name == "delete_todo":
+        answer = input(f"  Confirm: delete todo #{args.get('todo_id')}? [y/N] ").strip().lower()
+        if answer != "y":
+            return "The user declined the deletion."
+    try:
+        return FUNCTIONS[name](**args)
+    except Exception as e:
+        return f"Error executing tool: {e}"
+
+
+def run(task: str) -> str:
+    """Agent loop: call the model until it answers without tool calls or the limit is hit."""
+    timer = Timer()
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": task},
+    ]
+    tool_calls_log, tokens = [], {"prompt_tokens": 0, "completion_tokens": 0}
+    answer = "Stopped: maximum number of iterations reached without a final answer."
+
+    for iteration in range(1, MAX_ITERATIONS + 1):
+        response = client.chat.completions.create(
+            model=INFERENCE_MODEL, messages=messages, tools=TOOLS,
+        )
+        for key, value in usage_dict(response).items():
+            tokens[key] += value
+        message = response.choices[0].message
+        messages.append(message)
+
+        if not message.tool_calls:
+            answer = message.content or ""
+            break
+
+        for call in message.tool_calls:
+            try:
+                args = json.loads(call.function.arguments or "{}")
+                result = execute_tool(call.function.name, args)
+            except json.JSONDecodeError:
+                args, result = call.function.arguments, "Error: arguments are not valid JSON."
+            print(f"  [{iteration}] {call.function.name}({args}) -> {result}")
+            tool_calls_log.append({"tool": call.function.name, "args": args, "result": result})
+            messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
+
+    write_trace("todo_react_agent", {
+        "input": task, "model": INFERENCE_MODEL, "tool_calls": tool_calls_log,
+        "output": answer, "usage": tokens, "latency_ms": timer.ms(),
+    })
+    return answer
+
+
+# ---------------------------------------------------------------------------
 # Main execution
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    # Create agent with TODO tools
-    agent = SimpleAgent()
-
-    agent.add_tool(SimpleTool(
-        name="add_todo",
-        func=add_todo,
-        description="Adds a new todo item. Input: the description text, e.g. add_todo(Buy groceries)"
-    ))
-    agent.add_tool(SimpleTool(
-        name="list_todos",
-        func=list_todos,
-        description="Lists all current todos with their IDs and status. No input needed: list_todos()"
-    ))
-    agent.add_tool(SimpleTool(
-        name="complete_todo",
-        func=complete_todo,
-        description="Marks a todo as done. Input: the todo ID number, e.g. complete_todo(1)"
-    ))
-    agent.add_tool(SimpleTool(
-        name="delete_todo",
-        func=delete_todo,
-        description="Deletes a todo permanently. Input: the todo ID number, e.g. delete_todo(1)"
-    ))
-
     print("=" * 60)
     print("  TODO List Assistant  (LLM Agent Demo)")
     print("=" * 60)
+    print(AI_NOTICE)
 
     print("\n--- System prompt ---")
-    print(agent.get_system_prompt())
-    print("--- End of system prompt ---\n")
+    print(SYSTEM_PROMPT)
+    print("--- End of system prompt ---")
+    print(f"\nTools: {', '.join(t['function']['name'] for t in TOOLS)}\n")
 
     print("Manage your TODO list using natural language.")
     print("Type 'quit' or 'exit' to stop.\n")
@@ -319,5 +238,4 @@ if __name__ == "__main__":
             print("Goodbye!")
             break
 
-        result = agent.run(user_input)
-        print(f"\nAssistant: {result}\n")
+        print(f"\nAssistant: {run(user_input)}\n")
