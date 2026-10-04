@@ -4,16 +4,21 @@ Context Engineering example: German <-> English Translator.
 Demonstrates how careful system-prompt design ("context engineering") can steer
 an LLM to produce high-quality, natural translations — without any tools, RAG,
 or external data.  This is the simplest of the three complexity levels in this
-repository:  context_engineering  →  rag  →  agent.
+repository:  context_engineering  →  rag  →  agent
+(level 1 of the context axis: you fill the context yourself, fixed at design time).
 
 Uses:
 - OpenRouter (via openai client) for LLM inference
 """
 
 import os
+import sys
 
 from dotenv import load_dotenv
 from openai import OpenAI
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from tracing import AI_NOTICE  # noqa: E402
 
 load_dotenv()
 
@@ -85,6 +90,7 @@ if __name__ == "__main__":
     print("=" * 60)
     print("  German ↔ English Translator  (Context Engineering Demo)")
     print("=" * 60)
+    print(AI_NOTICE)
 
     print("\n--- System prompt (this is the context engineering) ---")
     print(SYSTEM_PROMPT)

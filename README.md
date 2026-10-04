@@ -1,15 +1,26 @@
 # dke-pr-examples
 
-This repository contains four AI-based Python programs, ordered by complexity:
+This repository contains four AI-based Python programs. They walk along **one axis: who fills the model's context?**
+
+| Level | Who fills the context? | Pattern | Program |
+|---|---|---|---|
+| 1 | You, fixed at design time | Prompt / context engineering | `context_engineering/de_en_translator.py` |
+| 2 | A deterministic pipeline before the call | RAG ("search first, then generate") | `rag/win_qa.py` |
+| 3 | The model itself, in a loop | Agent | `agent/todo_react_agent.py`, `agent/todo_langgraph_agent.py` |
+
+Same model, same building blocks — the only difference is how much control you hand over. Capability and error rate rise together, so autonomy is a design decision, not a quality feature.
+
 - **context_engineering/de_en_translator.py**: A German ↔ English translator that demonstrates how careful prompt design ("context engineering") steers LLM output — no tools, no external data.
-- **rag/win_qa.py**: A Retrieval-Augmented Generation (RAG) system that answers questions about the JKU Linz "Wirtschaftsinformatik" Bachelor and Master programs using document-based retrieval and OpenRouter for embeddings and inference.
-- **agent/todo_react_agent.py**: A TODO list assistant using a hand-rolled ReAct loop — shows how an agent works under the hood.
+- **rag/win_qa.py**: A Retrieval-Augmented Generation (RAG) system that answers questions about the JKU Linz "Wirtschaftsinformatik" Bachelor and Master programs using hybrid retrieval (dense + BM25), page citations and refusal when nothing relevant is found.
+- **agent/todo_react_agent.py**: A TODO list assistant with a hand-written harness (native tool calling) — shows how an agent loop works under the hood.
 - **agent/todo_langgraph_agent.py**: The same TODO assistant built with LangGraph — shows how a framework automates the agent loop.
+- **eval/**: A golden dataset and an evaluation script (Recall@k, MRR, pass rate) for the RAG example.
+- **tracing.py**: Shared helpers — the AI notice and JSONL traces (`traces/*.jsonl`, one line per run).
 
 ## Requirements
 
 - Python 3.8 or newer
-- API key for OpenRouter (environment variable `OPEN_ROUTER_API_KEY`) — required for all scripts. Get your free key at [OpenRouter](https://openrouter.ai/).
+- API key for OpenRouter (environment variable `OPEN_ROUTER_API_KEY`) — required for all scripts. Get your free key at [OpenRouter](https://openrouter.ai/). (Free tiers change almost monthly; alternatives without credit card are Google AI Studio, Groq, Mistral and local Ollama — any OpenAI-compatible endpoint works by changing `base_url` and the model name. Plan a fallback on HTTP 429. Free tiers usually train on your inputs: send no personal data.)
 - Internet connection (for OpenRouter API)
 - Recommended: Virtual environment (`python -m venv .venv`)
 
@@ -23,9 +34,7 @@ pip install -r requirements.txt
 
 A German ↔ English translator that demonstrates **context engineering** — the practice of carefully designing the system prompt to control LLM behaviour without any tools, retrieval, or external data.
 
-### What is context engineering?
-
-Context engineering is about crafting the *input context* (system prompt, user prompt, examples) so the model produces the output you want. A well-designed system prompt can enforce style, format, tone, and domain constraints — all without writing any extra code. This script shows how a single, carefully worded system prompt turns a general-purpose LLM into a specialised translator.
+Context engineering means crafting the *input context* (system prompt, examples) so the model behaves as wanted — here one carefully worded system prompt turns a general LLM into a translator, with no tools or data.
 
 ### How to start
 
@@ -69,18 +78,20 @@ Text: I'm looking forward to the weekend.
 
 ## agent/todo_react_agent.py
 
-A TODO list assistant that lets you manage tasks using **natural language**. Under the hood it follows the ReAct framework (Thought → Action → Observation loop), autonomously choosing CRUD tools to fulfil each request.
+A TODO list assistant for natural-language task management. The model picks tools; the surrounding code is the **harness**: model proposes a tool call → harness executes it → result goes back into the context → repeat. Native tool calling replaces the old "Thought:/Action:" text format.
 
 ### Available tools
 
 | Tool | Description |
 |---|---|
-| `add_todo(text)` | Adds a new todo item |
+| `add_todo(description)` | Adds a new todo item |
 | `list_todos()` | Lists all todos with IDs and status |
-| `complete_todo(id)` | Marks a todo as done |
-| `delete_todo(id)` | Permanently deletes a todo |
+| `complete_todo(todo_id)` | Marks a todo as done |
+| `delete_todo(todo_id)` | Permanently deletes a todo (**asks for confirmation first**) |
 
 Todos are persisted in `agent/todos.json` so they survive restarts.
+
+Safeguards in the harness: iteration limit (`MAX_ITERATIONS`), tool errors returned to the model, confirmation before `delete_todo`, one trace line per run.
 
 ### How to start
 
@@ -88,24 +99,17 @@ Todos are persisted in `agent/todos.json` so they survive restarts.
 python agent/todo_react_agent.py
 ```
 
-### Process
-
-1. The system prompt and available tools are shown at startup.
-2. You type natural-language requests (e.g. "Add buy groceries to my list").
-3. The agent reasons step by step (Thought, Action, Observation) and calls the appropriate tools.
-4. Once the request is fulfilled, the agent responds with a friendly summary.
-
 ## agent/todo_langgraph_agent.py
 
-The **same TODO assistant**, but built with [LangGraph](https://langchain-ai.github.io/langgraph/) instead of a hand-rolled loop. Comparing the two files shows what a framework automates for you:
+The **same TODO assistant**, but built with [LangGraph](https://langchain-ai.github.io/langgraph/) instead of a hand-written loop. Comparing the two files shows what a framework automates for you:
 
 | Manual (`todo_react_agent.py`) | Framework (`todo_langgraph_agent.py`) |
 |---|---|
-| Hand-parsed `Thought:` / `Action:` lines | LangGraph handles the ReAct loop |
-| Manual memory list | Built-in message state |
-| Custom system prompt with format examples | Tools declared with `@tool` decorator |
-| Regex-based output parsing | Automatic tool calling via LLM |
-| Explicit iteration loop | `agent.invoke()` runs until done |
+| Tool schemas written as JSON | Tools declared with `@tool` decorator |
+| Explicit `for` loop with `MAX_ITERATIONS` | `agent.invoke()` runs until done (`recursion_limit`) |
+| Manual message list | Built-in message state |
+| Own tool dispatch and error handling | Automatic tool execution |
+| Own trace writing | Own trace writing (same helper) |
 
 ### How to start
 
@@ -121,12 +125,15 @@ A document-based RAG (Retrieval-Augmented Generation) system that answers questi
 
 ### How it works
 
-1. **Program selection** – At startup you choose between the Bachelor and Master curriculum.
-2. **PDF extraction** – The official curriculum PDF (stored in `db/`) is parsed with PyPDF2.
-3. **Chunking** – The extracted text is split into overlapping 500-character chunks.
-4. **Embedding** – Each chunk is embedded via the OpenRouter API (`nvidia/llama-nemotron-embed-vl-1b-v2:free`). Embeddings are cached in a JSON file inside `db/` so they only need to be computed once.
-5. **Retrieval** – When you ask a question, your query is embedded and compared to all chunk embeddings via cosine similarity. The top 3 most relevant chunks (above a similarity threshold) are returned.
-6. **Generation** – The retrieved chunks plus your question are sent to an OpenRouter LLM (`nvidia/nemotron-3-nano-30b-a3b:free`) which generates the answer.
+1. **Extract** the curriculum PDF page by page (PyPDF2), so chunks know their page.
+2. **Chunk** at sentence boundaries (~600 characters, last sentence repeated).
+3. **Embed** each chunk via OpenRouter (prefixed with program and page); cached in `db/`, rebuilt when PDF or chunking changes.
+4. **Retrieve** hybrid: cosine similarity (meaning) + BM25 (exact terms), merged with Reciprocal Rank Fusion; top 3 chunks.
+5. **Refuse** without an LLM call if no chunk reaches the similarity threshold.
+6. **Generate** from the passages (passed as delimited data), citing pages like `[Seite 12]`.
+7. **Trace** the run to `traces/rag.jsonl`.
+
+A cross-encoder reranker is the natural next step if retrieval finds the right chunk but ranks it too low.
 
 ### Project structure
 
@@ -138,6 +145,9 @@ rag/
     win_bachelor_embeddings.json     # Cached embeddings for Bachelor
     win_master.pdf                   # Master curriculum PDF
     win_master_embeddings.json       # Cached embeddings for Master
+eval/
+  golden.jsonl                       # 15 test cases, 3 of them negative (20 %)
+  eval_rag.py                        # Recall@k, MRR, pass rate over 3 runs
 ```
 
 ### How to start
@@ -168,7 +178,7 @@ Your choice (master/bachelor): master
 
 Selected: Masterstudium Wirtschaftsinformatik
 
-Loaded 246 cached chunks from db/win_master_embeddings.json
+Loaded 297 cached chunks from db/win_master_embeddings.json
 
 Ready! Ask questions about the Wirtschaftsinformatik program.
 Type 'quit' or 'exit' to stop.
@@ -176,11 +186,13 @@ Type 'quit' or 'exit' to stop.
 Your question: Welche Pflichtfächer gibt es?
 
 Retrieving relevant passages ...
-  Retrieved 3 relevant chunks (similarities: [0.229, 0.207, 0.201])
+  Seite 12: dense=0.412 bm25=9.8 rrf=0.0328
+  Seite 15: dense=0.371 bm25=4.1 rrf=0.0301
+  Seite 11: dense=0.352 bm25=0.0 rrf=0.0164
 Generating answer ...
 
 === Answer ===
-Die Pflichtfächer im Masterstudium Wirtschaftsinformatik umfassen ...
+Das Pflichtprogramm umfasst 36 ECTS ... [Seite 12]
 ```
 
 ### Configuration
@@ -189,17 +201,31 @@ You can adjust these constants at the top of `win_qa.py`:
 
 | Constant | Default | Description |
 |---|---|---|
-| `CHUNK_SIZE` | 500 | Characters per chunk |
-| `CHUNK_OVERLAP` | 100 | Overlap between consecutive chunks |
-| `TOP_K` | 3 | Number of similar chunks to retrieve |
-| `SIMILARITY_THRESHOLD` | 0.10 | Minimum cosine similarity for retrieval |
+| `CHUNK_SIZE` | 600 | Target characters per chunk (cut at sentence boundaries) |
+| `TOP_K` | 3 | Number of chunks passed to the LLM |
+| `CANDIDATES` | 20 | Candidates per search method before fusion |
+| `RRF_K` | 60 | Reciprocal Rank Fusion constant |
+| `SIMILARITY_THRESHOLD` | 0.10 | Minimum cosine similarity — below it the system refuses |
 | `INFERENCE_MODEL` | `nvidia/nemotron-3-nano-30b-a3b:free` | OpenRouter model for answer generation |
 | `EMBEDDING_MODEL` | `nvidia/llama-nemotron-embed-vl-1b-v2:free` | OpenRouter model for embeddings |
 
+## Evaluation (eval/)
+
+Components are measured separately, retrieval first. `eval/golden.jsonl` has 15 cases (`id`, `program`, `question`, `expected_pages`, `key_phrases`, `category`), 20 % of them negative (questions the curriculum cannot answer).
+
+```cmd
+python eval/eval_rag.py --retrieval   # Recall@k and MRR
+python eval/eval_rag.py               # + pass rate over 3 runs per case
+```
+
+A single LLM run is a sample, not a result — hence 3 runs per case. With 15 cases, report tendencies, not decimals.
+
 ## Notes
 
-- The scripts illustrate increasing levels of complexity: **context engineering** (prompt design only) → **RAG** (retrieval + generation) → **agent** (autonomous tool use, manual vs. LangGraph).
-- All scripts use OpenRouter with free models. Set `OPEN_ROUTER_API_KEY` in your `.env` file or as an environment variable.
+- Levels of autonomy: **context engineering** → **RAG** → **agent**. Choose the lowest level that solves the problem.
+- All scripts use OpenRouter with free models; set `OPEN_ROUTER_API_KEY` in `.env` or the environment.
+- Every program shows an AI notice (EU AI Act, Art. 50). Retrieved text is passed as data, and deleting asks for confirmation.
+- Runtime data (`traces/`, `agent/todos.json`) is git-ignored.
 
 ---
 

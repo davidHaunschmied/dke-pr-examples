@@ -11,6 +11,7 @@ Uses:
 """
 
 import os
+import sys
 import json
 import warnings
 
@@ -21,6 +22,9 @@ from langchain_openai import ChatOpenAI
 # Suppress LangGraph deprecation warning (the function works fine from prebuilt)
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="langgraph")
 from langgraph.prebuilt import create_react_agent
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from tracing import AI_NOTICE, Timer, write_trace  # noqa: E402
 
 load_dotenv()
 
@@ -106,7 +110,9 @@ def complete_todo(todo_id: int) -> str:
 
 @tool
 def delete_todo(todo_id: int) -> str:
-    """Delete a todo permanently. Input: the todo ID number."""
+    """Delete a todo permanently (the user must confirm). Input: the todo ID number."""
+    if input(f"  Confirm: delete todo #{todo_id}? [y/N] ").strip().lower() != "y":
+        return "The user declined the deletion."
     todos = _load_todos()
     for i, t in enumerate(todos):
         if t["id"] == todo_id:
@@ -137,6 +143,7 @@ if __name__ == "__main__":
     print("=" * 60)
     print("  TODO List Assistant  (LangGraph Agent Demo)")
     print("=" * 60)
+    print(AI_NOTICE)
 
     print(f"\n--- System prompt ---")
     print(SYSTEM_PROMPT)
@@ -159,12 +166,23 @@ if __name__ == "__main__":
             print("Goodbye!")
             break
 
-        # Invoke the LangGraph agent
+        # Invoke the LangGraph agent; recursion_limit is the iteration limit
+        timer = Timer()
         result = agent.invoke(
-            {"messages": [{"role": "user", "content": user_input}]}
+            {"messages": [{"role": "user", "content": user_input}]},
+            {"recursion_limit": 25},
         )
 
         # The last message in the result is the agent's final response
         final_message = result["messages"][-1]
+        write_trace("todo_langgraph_agent", {
+            "input": user_input,
+            "tool_calls": [
+                {"tool": c["name"], "args": c["args"]}
+                for m in result["messages"] for c in (getattr(m, "tool_calls", None) or [])
+            ],
+            "output": final_message.content,
+            "latency_ms": timer.ms(),
+        })
         print(f"\nAssistant: {final_message.content}\n")
 

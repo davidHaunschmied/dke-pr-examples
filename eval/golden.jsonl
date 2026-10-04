@@ -1,0 +1,15 @@
+{"id": "F-01", "program": "master", "question": "Wie lange dauert das Masterstudium Wirtschaftsinformatik?", "expected_pages": [12], "key_phrases": ["vier Semester"], "category": "Faktenfrage"}
+{"id": "F-02", "program": "master", "question": "Wie viele ECTS umfasst das Masterstudium insgesamt?", "expected_pages": [12], "key_phrases": ["120"], "category": "Faktenfrage"}
+{"id": "F-03", "program": "master", "question": "Welcher akademische Grad wird nach dem Masterstudium verliehen?", "expected_pages": [32], "key_phrases": ["Master of Science"], "category": "Faktenfrage"}
+{"id": "F-04", "program": "master", "question": "Welchen Umfang in ECTS hat die Masterarbeit?", "expected_pages": [30], "key_phrases": ["26"], "category": "Faktenfrage"}
+{"id": "F-05", "program": "master", "question": "Wie viele ECTS hat das Masterarbeitsseminar?", "expected_pages": [30], "key_phrases": ["3"], "category": "Faktenfrage"}
+{"id": "F-06", "program": "master", "question": "Welches Englischniveau muss man für eine Zulassung ohne Deutschkenntnisse nachweisen?", "expected_pages": [11], "key_phrases": ["B2"], "category": "Faktenfrage"}
+{"id": "F-07", "program": "master", "question": "Welche vier Kompetenzbereiche prägen die Linzer Wirtschaftsinformatik?", "expected_pages": [4], "key_phrases": ["Information Engineering", "Software Engineering", "Data & Knowledge Engineering", "Communications Engineering"], "category": "Faktenfrage"}
+{"id": "F-08", "program": "master", "question": "Wie viele ECTS entfallen im Masterstudium auf das Wahlprogramm und wie viele auf Freie Studienleistungen?", "expected_pages": [12], "key_phrases": ["48", "6"], "category": "Mehrschrittfrage"}
+{"id": "F-09", "program": "bachelor", "question": "Wie viele Semester dauert das Bachelorstudium Wirtschaftsinformatik?", "expected_pages": [7], "key_phrases": ["sechs Semester"], "category": "Faktenfrage"}
+{"id": "F-10", "program": "bachelor", "question": "Wie viele ECTS umfasst das Bachelorstudium?", "expected_pages": [7], "key_phrases": ["180"], "category": "Faktenfrage"}
+{"id": "F-11", "program": "bachelor", "question": "Welcher akademische Grad wird nach dem Bachelorstudium verliehen?", "expected_pages": [14], "key_phrases": ["Bachelor of Science"], "category": "Faktenfrage"}
+{"id": "F-12", "program": "bachelor", "question": "Wie viele ECTS hat das Spezialisierungsfach Wirtschaftsinformatik mit Bachelorarbeit?", "expected_pages": [7, 11], "key_phrases": ["12"], "category": "Faktenfrage"}
+{"id": "F-13", "program": "master", "question": "Wann öffnet die Mensa am Sonntag?", "expected_pages": [], "key_phrases": [], "category": "Negativfall"}
+{"id": "F-14", "program": "bachelor", "question": "Wie hoch ist der Studienbeitrag pro Semester?", "expected_pages": [], "key_phrases": [], "category": "Negativfall"}
+{"id": "F-15", "program": "master", "question": "Wer ist der aktuelle Dekan der SOWI-Fakultät?", "expected_pages": [], "key_phrases": [], "category": "Negativfall"}

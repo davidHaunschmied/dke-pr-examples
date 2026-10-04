@@ -3,3 +3,5 @@ venv
 .idea
 rag/db/*_embeddings.json
 agent/todos.json
+traces/
+__pycache__/
